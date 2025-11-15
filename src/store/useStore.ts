@@ -2,6 +2,12 @@ import { create } from 'zustand';
 import type { AppData, AppSettings, AIConfig } from '../types';
 import { db, createDefaultAppData } from '../lib/database';
 import { AIAssistant } from '../lib/ai-service';
+import {
+  generateEncryptionKey,
+  storeEncryptionKey,
+  retrieveEncryptionKey,
+  isEncryptionSetup,
+} from '../lib/encryption';
 
 interface AppState {
   // Data
@@ -18,6 +24,7 @@ interface AppState {
   // Encryption
   isUnlocked: boolean;
   encryptionKey: string | null;
+  isPasswordSetup: boolean;
 
   // Actions
   initializeApp: () => Promise<void>;
@@ -36,7 +43,8 @@ interface AppState {
   clearAIHistory: () => void;
 
   // Encryption
-  unlock: (key: string) => void;
+  setupPassword: (password: string) => Promise<void>;
+  unlock: (password: string) => Promise<boolean>;
   lock: () => void;
 
   // Utility
@@ -55,19 +63,23 @@ export const useStore = create<AppState>((set, get) => ({
   isAILoading: false,
   isUnlocked: false,
   encryptionKey: null,
+  isPasswordSetup: false,
 
   // Initialize the application
   initializeApp: async () => {
     set({ isLoading: true, error: null });
 
     try {
+      // Check if password is set up
+      const passwordSetup = isEncryptionSetup();
+      set({ isPasswordSetup: passwordSetup });
+
       // Load settings
       const settings = await db.getSettings();
 
       if (!settings) {
-        // Create default settings
+        // Create default settings (encryption is now always enabled)
         const defaultSettings: AppSettings = {
-          encryptionEnabled: false,
           autoSave: true,
           theme: 'light',
         };
@@ -77,19 +89,8 @@ export const useStore = create<AppState>((set, get) => ({
         set({ settings });
       }
 
-      // Try to load existing data
-      const existingData = await db.getAppData('default');
-
-      if (!existingData) {
-        // Create default data
-        const defaultData = createDefaultAppData();
-        await db.saveAppData(defaultData);
-        set({ appData: defaultData });
-      } else {
-        set({ appData: existingData });
-      }
-
-      set({ isUnlocked: !settings?.encryptionEnabled });
+      // Always start locked - user must unlock with password
+      set({ isUnlocked: false });
     } catch (error) {
       console.error('Failed to initialize app:', error);
       set({ error: 'Failed to initialize application' });
@@ -257,9 +258,73 @@ export const useStore = create<AppState>((set, get) => ({
     set({ aiMessages: [] });
   },
 
-  // Unlock with encryption key
-  unlock: (key: string) => {
-    set({ encryptionKey: key, isUnlocked: true });
+  // Setup password for first-time users
+  setupPassword: async (password: string) => {
+    try {
+      // Generate a new encryption key
+      const key = generateEncryptionKey();
+
+      // Store the encrypted key
+      storeEncryptionKey(key, password);
+
+      // Set the encryption key and unlock
+      set({
+        encryptionKey: key,
+        isUnlocked: true,
+        isPasswordSetup: true,
+        error: null,
+      });
+
+      // Create default data and save it encrypted
+      const defaultData = createDefaultAppData();
+      await db.saveAppData(defaultData, key);
+      set({ appData: defaultData });
+    } catch (error) {
+      console.error('Failed to setup password:', error);
+      set({ error: 'Failed to setup password' });
+      throw error;
+    }
+  },
+
+  // Unlock with password
+  unlock: async (password: string): Promise<boolean> => {
+    try {
+      // Retrieve the encryption key using the password
+      const key = retrieveEncryptionKey(password);
+
+      if (!key) {
+        set({ error: 'Incorrect password' });
+        return false;
+      }
+
+      // Load and decrypt data
+      const data = await db.getAppData('default', key);
+
+      if (!data) {
+        // If no data exists, create default data
+        const defaultData = createDefaultAppData();
+        await db.saveAppData(defaultData, key);
+        set({
+          encryptionKey: key,
+          isUnlocked: true,
+          appData: defaultData,
+          error: null,
+        });
+      } else {
+        set({
+          encryptionKey: key,
+          isUnlocked: true,
+          appData: data,
+          error: null,
+        });
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Failed to unlock:', error);
+      set({ error: 'Failed to unlock - incorrect password or corrupted data' });
+      return false;
+    }
   },
 
   // Lock the app

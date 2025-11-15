@@ -287,8 +287,6 @@ export interface AIMessage {
 
 // Settings
 export interface AppSettings {
-  encryptionEnabled: boolean;
-  encryptionKey?: string;
   aiConfig?: AIConfig;
   autoSave: boolean;
   theme: 'light' | 'dark' | 'system';

@@ -7,11 +7,14 @@ import { FinancialPlanning } from './pages/FinancialPlanning';
 import { EstatePlanning } from './pages/EstatePlanning';
 import { NextOfKinPlan } from './pages/NextOfKinPlan';
 import { Settings } from './pages/Settings';
+import { UnlockScreen } from './components/UnlockScreen';
+import { SetupPassword } from './components/SetupPassword';
 import { Loader2 } from 'lucide-react';
 
 function App() {
-  const { initializeApp, isLoading, error } = useStore();
+  const { initializeApp, isLoading, error, isUnlocked, isPasswordSetup, setupPassword, unlock, clearError } = useStore();
   const [isInitialized, setIsInitialized] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -21,6 +24,29 @@ function App() {
     init();
   }, [initializeApp]);
 
+  const handleSetupPassword = async (password: string) => {
+    try {
+      setUnlockError(null);
+      await setupPassword(password);
+    } catch (err) {
+      setUnlockError('Failed to setup password. Please try again.');
+    }
+  };
+
+  const handleUnlock = async (password: string) => {
+    try {
+      setUnlockError(null);
+      clearError();
+      const success = await unlock(password);
+      if (!success) {
+        setUnlockError('Incorrect password. Please try again.');
+      }
+    } catch (err) {
+      setUnlockError('Failed to unlock. Please try again.');
+    }
+  };
+
+  // Show loading screen while initializing
   if (!isInitialized || isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -32,7 +58,8 @@ function App() {
     );
   }
 
-  if (error) {
+  // Show fatal error screen
+  if (error && !isUnlocked) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center max-w-md">
@@ -51,6 +78,17 @@ function App() {
     );
   }
 
+  // Show setup screen for first-time users
+  if (!isPasswordSetup && !isUnlocked) {
+    return <SetupPassword onSetup={handleSetupPassword} />;
+  }
+
+  // Show unlock screen if not unlocked
+  if (!isUnlocked) {
+    return <UnlockScreen onUnlock={handleUnlock} error={unlockError || undefined} />;
+  }
+
+  // Show main app when unlocked
   return (
     <BrowserRouter basename="/life-planner">
       <Routes>

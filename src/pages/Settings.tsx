@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { FormField } from '../components/FormField';
-import { Download, Upload, Save, FileJson, FileText } from 'lucide-react';
+import { Download, Upload, Save, FileJson, FileText, Lock, Shield } from 'lucide-react';
 import { getAvailableProviders, getAIConfigFromEnv } from '../lib/ai-service';
 import { db } from '../lib/database';
 import { exportAsPDF, exportAsJSON, importFromJSON, createBackup, generateReport } from '../lib/export';
 import type { AIProvider } from '../types';
 
 export function Settings() {
-  const { appData, settings, updateSettings, initializeAI } = useStore();
+  const { appData, settings, updateSettings, initializeAI, lock, encryptionKey } = useStore();
   const [activeTab, setActiveTab] = useState<'ai' | 'backup' | 'general'>('ai');
   const [aiProvider, setAiProvider] = useState<AIProvider>('anthropic');
   const [apiKey, setApiKey] = useState('');
@@ -75,7 +75,8 @@ export function Settings() {
 
     try {
       const data = await importFromJSON(file);
-      await db.saveAppData(data);
+      // Save with encryption key (encryption is mandatory)
+      await db.saveAppData(data, encryptionKey || undefined);
       window.location.reload();
     } catch (error) {
       alert('Failed to import data. Please check the file format.');
@@ -322,6 +323,39 @@ export function Settings() {
                     </div>
                   </div>
                 </label>
+              </div>
+
+              <div className="border-t pt-6">
+                <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <Shield className="text-blue-600" size={24} />
+                  Security
+                </h3>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <div className="flex items-start gap-3 mb-3">
+                    <Lock className="text-blue-700 mt-1" size={20} />
+                    <div>
+                      <p className="font-medium text-blue-900 mb-1">Encryption Enabled</p>
+                      <p className="text-sm text-blue-800">
+                        All your sensitive data is protected with AES-256 encryption.
+                        Your data is encrypted at rest and can only be accessed with your password.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    if (window.confirm('Are you sure you want to lock the app? You will need to enter your password again.')) {
+                      lock();
+                    }
+                  }}
+                  className="btn-secondary flex items-center gap-2"
+                >
+                  <Lock size={20} />
+                  Lock Application
+                </button>
+                <p className="text-sm text-gray-600 mt-2">
+                  Lock the app and require password to access. Your data will remain encrypted.
+                </p>
               </div>
 
               <div className="border-t pt-6">
